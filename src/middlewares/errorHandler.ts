@@ -6,7 +6,7 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ): void => {
-  // Error-handling logic will go here
+  
   const statusCode = 500;
   const message =
   error instanceof Error
