@@ -264,3 +264,135 @@ export const logout = (
     next(error);
   }
 };
+
+export const updateProfile = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const {
+      name,
+      email,
+      phone,
+      pg: pgId,
+      profilePic,
+    } = req.body;
+
+    const user = await User.findById(req.user!.id);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    if (name !== undefined) {
+      if (typeof name !== "string" || name.trim() === "") {
+        res.status(400).json({
+          success: false,
+          message: "Name cannot be empty",
+        });
+        return;
+      }
+
+      user.name = name.trim();
+    }
+
+    if (email !== undefined) {
+      if (typeof email !== "string" || email.trim() === "") {
+        res.status(400).json({
+          success: false,
+          message: "Email cannot be empty",
+        });
+        return;
+      }
+
+      const cleanedEmail = email.toLowerCase().trim();
+
+      const existingEmail = await User.findOne({
+        email: cleanedEmail,
+        _id: { $ne: user._id },
+      });
+
+      if (existingEmail) {
+        res.status(409).json({
+          success: false,
+          message: "Email already exists",
+        });
+        return;
+      }
+
+      user.email = cleanedEmail;
+    }
+
+    if (phone !== undefined) {
+      if (typeof phone !== "string" || phone.trim() === "") {
+        res.status(400).json({
+          success: false,
+          message: "Phone number cannot be empty",
+        });
+        return;
+      }
+
+      const cleanedPhone = phone.trim();
+
+      const existingPhone = await User.findOne({
+        phone: cleanedPhone,
+        _id: { $ne: user._id },
+      });
+
+      if (existingPhone) {
+        res.status(409).json({
+          success: false,
+          message: "Phone number already exists",
+        });
+        return;
+      }
+
+      user.phone = cleanedPhone;
+    }
+
+    if (pgId !== undefined) {
+      const existingPg = await PG.findById(pgId);
+
+      if (!existingPg) {
+        res.status(404).json({
+          success: false,
+          message: "PG not found",
+        });
+        return;
+      }
+
+      user.pg = existingPg._id;
+    }
+
+    if (profilePic !== undefined) {
+      if (typeof profilePic !== "string") {
+        res.status(400).json({
+          success: false,
+          message: "Profile picture must be a valid string",
+        });
+        return;
+      }
+
+      user.profilePic = profilePic.trim();
+    }
+
+    await user.save();
+
+    const updatedUser = await User.findById(user._id)
+      .select("-password")
+      .populate("pg");
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
