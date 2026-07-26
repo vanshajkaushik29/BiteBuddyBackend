@@ -396,3 +396,86 @@ export const updateProfile = async (
     next(error);
   }
 };
+
+export const changePassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    // Check whether both passwords were sent
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({
+        success: false,
+        message: "Current password and new password are required",
+      });
+      return;
+    }
+
+    // Find the currently logged-in user
+    const user = await User.findById(req.user!.id);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    // Compare entered current password with stored hashed password
+    const isCurrentPasswordCorrect = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+
+    if (!isCurrentPasswordCorrect) {
+      res.status(401).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+      return;
+    }
+
+    // Prevent user from using the same password again
+    const isSamePassword = await bcrypt.compare(
+      newPassword,
+      user.password
+    );
+
+    if (isSamePassword) {
+      res.status(400).json({
+        success: false,
+        message: "New password must be different from current password",
+      });
+      return;
+    }
+
+    // Basic new-password validation
+    if (newPassword.length < 6) {
+      res.status(400).json({
+        success: false,
+        message: "New password must contain at least 6 characters",
+      });
+      return;
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Replace the old hashed password
+    user.password = hashedPassword;
+
+    // Save the updated user in MongoDB
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
