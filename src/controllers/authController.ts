@@ -129,7 +129,7 @@ export const login = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    
+  
     // 1. Receive login data
     const { email, password } = req.body;
 
