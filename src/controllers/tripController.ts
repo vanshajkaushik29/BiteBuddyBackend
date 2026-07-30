@@ -133,3 +133,86 @@ export const createTrip = async (
     next(error);
   }
 };
+
+export const getTrips = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+
+    // 1. Find logged-in user
+    const user = await User.findById(req.user!.id);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    // 2. Find active trips of the same PG
+    const activeTrips = await Trip.find({
+      pg: user.pg,
+      status: TripStatus.ACTIVE,
+    });
+
+    // 3. Send response
+    res.status(200).json({
+      success: true,
+      message: "Trips fetched successfully",
+      data: activeTrips,
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTripById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const tripId = req.params.id;
+
+    const user = await User.findById(req.user!.id);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    const selectedTrip = await Trip.findById(tripId);
+
+    if (!selectedTrip) {
+      res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+      return;
+    }
+
+    if (selectedTrip.pg.toString() !== user.pg.toString()) {
+      res.status(403).json({
+        success: false,
+        message: "You are not allowed to access this trip.",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Trip fetched successfully",
+      data: selectedTrip,
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
