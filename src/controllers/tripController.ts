@@ -216,3 +216,243 @@ export const getTripById = async (
     next(error);
   }
 };
+
+export const updateTrip = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const tripId = req.params.id;
+
+    const {
+      destination,
+      departureTime,
+      acceptOrdersUntil,
+      expectedReturnTime,
+      maxOrders,
+      carryingFee,
+      notes,
+    } = req.body;
+
+    // Find logged-in user
+    const user = await User.findById(req.user!.id);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    // Find trip
+    const trip = await Trip.findById(tripId);
+
+    if (!trip) {
+      res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+      return;
+    }
+
+    // Only creator can update
+    if (trip.createdBy.toString() !== user._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: "You are not allowed to update this trip",
+      });
+      return;
+    }
+
+    // Completed or Cancelled trips cannot be updated
+    if (
+      trip.status === TripStatus.COMPLETED ||
+      trip.status === TripStatus.CANCELLED
+    ) {
+      res.status(400).json({
+        success: false,
+        message: "This trip cannot be updated",
+      });
+      return;
+    }
+
+    // Trip already started
+    if (new Date() >= trip.departureTime) {
+      res.status(400).json({
+        success: false,
+        message: "Trip has already started",
+      });
+      return;
+    }
+
+    // Prepare latest values
+    const finalDepartureTime = departureTime
+      ? new Date(departureTime)
+      : trip.departureTime;
+
+    const finalAcceptOrdersUntil = acceptOrdersUntil
+      ? new Date(acceptOrdersUntil)
+      : trip.acceptOrdersUntil;
+
+    const finalExpectedReturnTime = expectedReturnTime
+      ? new Date(expectedReturnTime)
+      : trip.expectedReturnTime;
+
+    // Validate time rules
+    if (finalDepartureTime <= new Date()) {
+      res.status(400).json({
+        success: false,
+        message: "Departure time must be in the future",
+      });
+      return;
+    }
+
+    if (finalAcceptOrdersUntil >= finalDepartureTime) {
+      res.status(400).json({
+        success: false,
+        message: "Accept orders time must be before departure time",
+      });
+      return;
+    }
+
+    if (finalExpectedReturnTime <= finalDepartureTime) {
+      res.status(400).json({
+        success: false,
+        message: "Expected return time must be after departure time",
+      });
+      return;
+    }
+
+    // Validate max orders
+    if (maxOrders !== undefined) {
+      if (maxOrders < trip.currentOrders) {
+        res.status(400).json({
+          success: false,
+          message: "Max orders cannot be less than current orders",
+        });
+        return;
+      }
+
+      trip.maxOrders = maxOrders;
+    }
+
+    // Validate carrying fee
+    if (carryingFee !== undefined) {
+      if (carryingFee < 0) {
+        res.status(400).json({
+          success: false,
+          message: "Carrying fee cannot be negative",
+        });
+        return;
+      }
+
+      trip.carryingFee = carryingFee;
+    }
+
+    // Update remaining fields
+    if (destination !== undefined) {
+      trip.destination = destination.trim();
+    }
+
+    if (departureTime !== undefined) {
+      trip.departureTime = finalDepartureTime;
+    }
+
+    if (acceptOrdersUntil !== undefined) {
+      trip.acceptOrdersUntil = finalAcceptOrdersUntil;
+    }
+
+    if (expectedReturnTime !== undefined) {
+      trip.expectedReturnTime = finalExpectedReturnTime;
+    }
+
+    if (notes !== undefined) {
+      trip.notes = notes.trim();
+    }
+
+    await trip.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Trip updated successfully",
+      data: trip,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteTrip = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const tripId = req.params.id;
+
+    // Find logged-in user
+    const user = await User.findById(req.user!.id);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    // Find trip
+    const trip = await Trip.findById(tripId);
+
+    if (!trip) {
+      res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+      return;
+    }
+
+    // Check ownership
+    if (trip.createdBy.toString() !== user._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: "You are not allowed to delete this trip",
+      });
+      return;
+    }
+
+    // Don't allow deleting started or completed trips
+    if (
+      trip.status === TripStatus.STARTED ||
+      trip.status === TripStatus.COMPLETED
+    ) {
+      res.status(400).json({
+        success: false,
+        message: "This trip cannot be deleted",
+      });
+      return;
+    }
+
+    // Don't allow deleting if someone has already joined
+    if (trip.currentOrders > 0) {
+      res.status(400).json({
+        success: false,
+        message: "Cannot delete a trip that already has orders",
+      });
+      return;
+    }
+
+    // Delete trip
+    await trip.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: "Trip deleted successfully",
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};

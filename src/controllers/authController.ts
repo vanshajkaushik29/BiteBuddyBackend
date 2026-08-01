@@ -49,7 +49,6 @@ export const register = async (
       });
       return;
     }
-
     const normalizedName = pg.name.toLowerCase().trim();
     const normalizedArea = pg.area.toLowerCase().trim();
     const normalizedCity = pg.city.toLowerCase().trim();
@@ -129,7 +128,7 @@ export const login = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-  
+                       
     // 1. Receive login data
     const { email, password } = req.body;
 
