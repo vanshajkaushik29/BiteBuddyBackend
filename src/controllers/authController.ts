@@ -436,7 +436,7 @@ export const changePassword = async (
         message: "Current password is incorrect",
       });
       return;
-    }
+    }    
 
     // Prevent user from using the same password again
     const isSamePassword = await bcrypt.compare(

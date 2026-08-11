@@ -10,3 +10,9 @@ export enum TripStatus{
     COMPLETED="COMPLETED",
     CANCELLED="CANCELLED"
 }
+
+export enum OrderStatus {
+  ACCEPTED = "ACCEPTED",
+  COMPLETED = "COMPLETED",
+  CANCELLED = "CANCELLED"
+}
