@@ -133,3 +133,37 @@ export const createOrder = async (
     next(error);
   }
 };
+
+export const getmyOrders = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const userId = req.user!.id;
+
+        const orders = await Order.find({
+            orderedBy: userId
+        }).populate("trip");
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "No orders found for this user",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Orders found successfully",
+            data: orders,
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+
+
+ 
