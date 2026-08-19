@@ -1,6 +1,7 @@
 import express from "express";
 import authRoutes from "./routes/authRoutes.js"
-import tripRoutes from "./routes/tripRoutes.js";
+import tripRoutes from "./routes/tripRoutes.js"
+import pgRoutes from "./routes/pgRoutes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import cookieParser from "cookie-parser";
 import orderRoutes from "./routes/orderRoutes.js";
@@ -17,6 +18,7 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/trips",tripRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/pgs", pgRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
