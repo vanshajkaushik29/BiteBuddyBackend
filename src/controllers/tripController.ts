@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import User from "../models/User.js";
 import Trip from "../models/Trip.js";
 import { TripStatus } from "../types/enum.js";
+import { updateTripStatus } from "../utils/updateTripStatus.js";
 
 export const createTrip = async (
   req: Request,
@@ -157,6 +158,11 @@ export const getTrips = async (
       pg: user.pg,
       status: TripStatus.ACTIVE,
     });
+
+    //update the status of active trips if they have started
+    for (const trip of activeTrips) {
+      await updateTripStatus(trip);
+    }
 
     // 3. Send response
     res.status(200).json({
@@ -452,6 +458,58 @@ export const deleteTrip = async (
       message: "Trip deleted successfully",
     });
 
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const completeTrip = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // 1. Get trip ID from URL
+    const tripId = req.params.id;
+
+    // 2. Find the trip
+    const trip = await Trip.findById(tripId);
+
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    // 3. Check whether logged-in user created this trip
+    if (trip.createdBy.toString() !== req.user!.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to complete this trip",
+      });
+    }
+
+    // 4. Trip must be STARTED before it can be completed
+    if (trip.status !== TripStatus.STARTED) {
+      return res.status(400).json({
+        success: false,
+        message: "Only started trips can be completed",
+      });
+    }
+
+    // 5. Change status
+    trip.status = TripStatus.COMPLETED;
+
+    // 6. Save updated trip
+    await trip.save();
+
+    // 7. Send response
+    return res.status(200).json({
+      success: true,
+      message: "Trip completed successfully",
+      data: trip,
+    });
   } catch (error) {
     next(error);
   }
