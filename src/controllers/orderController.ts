@@ -2,8 +2,9 @@ import type { Request, Response, NextFunction } from "express";
 import Order from "../models/Order.js";
 import User from "../models/User.js";
 import Trip from "../models/Trip.js";
+import Reward from "../models/Reward.js";
 import { TripStatus } from "../types/enum.js";
-import { OrderStatus } from "../types/enum.js";
+import { OrderStatus, RewardType } from "../types/enum.js";
 
 export const createOrder = async (
   req: Request,
@@ -465,6 +466,15 @@ export const cancelOrder = async (
       );
 
       await user.save();
+
+      // Record penalty in Reward history
+      await Reward.create({
+        user: user._id,
+        order: order._id,
+        points: -cancellationPenalty,
+        type: RewardType.CANCELLATION_PENALTY,
+        description: "Deduction for cancelling order after trip started",
+      });
     }
 
     // 7. Cancel the order
@@ -485,6 +495,236 @@ export const cancelOrder = async (
           ? "Order cancelled. 10 reward points have been deducted."
           : "Order cancelled successfully",
       data: order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deliverOrder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const orderId = req.params.id;
+
+    // 1. Find logged-in user
+    const user = await User.findById(req.user!.id);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    // 2. Find order
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+      return;
+    }
+
+    // 3. Find associated trip
+    const trip = await Trip.findById(order.trip);
+
+    if (!trip) {
+      res.status(404).json({
+        success: false,
+        message: "Associated trip not found",
+      });
+      return;
+    }
+
+    // 4. Only the trip creator can mark an order as delivered
+    if (trip.createdBy.toString() !== user._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: "Only the trip creator can mark an order as delivered",
+      });
+      return;
+    }
+
+    // 5. Trip must be in STARTED status
+    if (trip.status !== TripStatus.STARTED) {
+      res.status(400).json({
+        success: false,
+        message: "Order can only be marked as delivered after the trip has started",
+      });
+      return;
+    }
+
+    // 6. Check order status validations
+    if (order.status === OrderStatus.DELIVERED) {
+      res.status(400).json({
+        success: false,
+        message: "Order is already marked as delivered",
+      });
+      return;
+    }
+
+    if (order.status === OrderStatus.COMPLETED) {
+      res.status(400).json({
+        success: false,
+        message: "Order is already completed",
+      });
+      return;
+    }
+
+    if (order.status === OrderStatus.CANCELLED) {
+      res.status(400).json({
+        success: false,
+        message: "Cannot deliver a cancelled order",
+      });
+      return;
+    }
+
+    if (order.status !== OrderStatus.ACCEPTED) {
+      res.status(400).json({
+        success: false,
+        message: "Only accepted orders can be delivered",
+      });
+      return;
+    }
+
+    // 7. Update order status to DELIVERED
+    order.status = OrderStatus.DELIVERED;
+    await order.save();
+
+    // 8. Return populated updated order
+    const updatedOrder = await Order.findById(order._id)
+      .populate("orderedBy", "name phone profilePic")
+      .populate("trip", "destination departureTime expectedReturnTime status");
+
+    res.status(200).json({
+      success: true,
+      message: "Order marked as delivered successfully",
+      data: updatedOrder,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const confirmOrder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const orderId = req.params.id;
+
+    // 1. Find logged-in user
+    const user = await User.findById(req.user!.id);
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    // 2. Find order
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+      return;
+    }
+
+    // 3. Only the person who placed the order (requester) can confirm delivery
+    if (order.orderedBy.toString() !== user._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: "Only the requester who placed the order can confirm delivery",
+      });
+      return;
+    }
+
+    // 4. Check order status validations
+    if (order.status === OrderStatus.COMPLETED) {
+      res.status(400).json({
+        success: false,
+        message: "Order is already completed",
+      });
+      return;
+    }
+
+    if (order.status === OrderStatus.CANCELLED) {
+      res.status(400).json({
+        success: false,
+        message: "Cannot confirm a cancelled order",
+      });
+      return;
+    }
+
+    if (order.status !== OrderStatus.DELIVERED) {
+      res.status(400).json({
+        success: false,
+        message: "Order must be marked as DELIVERED by the trip creator before it can be confirmed",
+      });
+      return;
+    }
+
+    // 5. Find associated trip
+    const trip = await Trip.findById(order.trip);
+
+    if (!trip) {
+      res.status(404).json({
+        success: false,
+        message: "Associated trip not found",
+      });
+      return;
+    }
+
+    // 6. Update order status to COMPLETED
+    order.status = OrderStatus.COMPLETED;
+
+    // 7. Idempotent Reward Allocation logic
+    // Award +10 reward points to the trip creator if not already awarded
+    if (!order.isRewardAwarded) {
+      const tripCreator = await User.findById(trip.createdBy);
+
+      if (tripCreator) {
+        const rewardPointsToAward = 10;
+        tripCreator.rewardPoints += rewardPointsToAward;
+        await tripCreator.save();
+
+        // Record reward transaction in Reward log
+        await Reward.create({
+          user: tripCreator._id,
+          order: order._id,
+          points: rewardPointsToAward,
+          type: RewardType.EARNED_TRIP_COMPLETED,
+          description: "Reward points earned for successfully delivering order",
+        });
+      }
+
+      order.isRewardAwarded = true;
+    }
+
+    // 8. Save updated order
+    await order.save();
+
+    // 9. Return populated updated order
+    const updatedOrder = await Order.findById(order._id)
+      .populate("orderedBy", "name phone profilePic")
+      .populate("trip", "destination departureTime expectedReturnTime status");
+
+    res.status(200).json({
+      success: true,
+      message: "Order delivery confirmed and completed successfully. 10 reward points awarded to trip creator.",
+      data: updatedOrder,
     });
   } catch (error) {
     next(error);

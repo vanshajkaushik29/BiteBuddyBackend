@@ -153,24 +153,65 @@ export const getTrips = async (
       return;
     }
 
+    // // 2. Find active trips of the same PG
+    // const activeTrips = await Trip.find({
+    //   pg: user.pg,
+    //   status: TripStatus.ACTIVE,
+    // });
+
+    // //update the status of active trips if they have started
+    // for (const trip of activeTrips) {
+    //   await updateTripStatus(trip);
+    // }
+
+    // // 3. Send response
+    // res.status(200).json({
+    //   success: true,
+    //   message: "Trips fetched successfully",
+    //   data: activeTrips,
     // 2. Find active trips of the same PG
-    const activeTrips = await Trip.find({
+    const initialTrips = await Trip.find({
       pg: user.pg,
       status: TripStatus.ACTIVE,
     });
 
-    //update the status of active trips if they have started
-    for (const trip of activeTrips) {
+    // Update the status of active trips if they have started
+    for (const trip of initialTrips) {
       await updateTripStatus(trip);
     }
+
+    // Fetch the clean list again to exclude any trips that just changed to STARTED
+    const currentActiveTrips = await Trip.find({
+      pg: user.pg,
+      status: TripStatus.ACTIVE,
+    });
 
     // 3. Send response
     res.status(200).json({
       success: true,
       message: "Trips fetched successfully",
-      data: activeTrips,
+      data: currentActiveTrips, // Send the accurate, fresh data
+
     });
 
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMyTrips = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const trips = await Trip.find({ createdBy: req.user!.id }).sort({ departureTime: -1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Your trips fetched successfully",
+      data: trips,
+    });
   } catch (error) {
     next(error);
   }

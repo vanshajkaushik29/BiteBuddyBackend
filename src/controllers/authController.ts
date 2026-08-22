@@ -49,6 +49,10 @@ export const register = async (
       });
       return;
     }
+
+    // Auto-Find or Create PG Logic:
+    // Search DB for PG with matching normalized name, area, city.
+    // If found -> Link existing PG. If NOT found -> Automatically create new PG.
     const normalizedName = pg.name.toLowerCase().trim();
     const normalizedArea = pg.area.toLowerCase().trim();
     const normalizedCity = pg.city.toLowerCase().trim();
@@ -128,7 +132,7 @@ export const login = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-                       
+
     // 1. Receive login data
     const { email, password } = req.body;
 
@@ -436,7 +440,7 @@ export const changePassword = async (
         message: "Current password is incorrect",
       });
       return;
-    }    
+    }
 
     // Prevent user from using the same password again
     const isSamePassword = await bcrypt.compare(
