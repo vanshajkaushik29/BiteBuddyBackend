@@ -13,6 +13,7 @@ export interface IOrder extends Document {
   pickupLocation: string;
   pg: mongoose.Types.ObjectId;
   quantity: number;
+  isRewardAwarded: boolean;
 }
 
 const orderSchema = new mongoose.Schema<IOrder>(
@@ -81,6 +82,11 @@ const orderSchema = new mongoose.Schema<IOrder>(
       type: Number,
       required: true,
       min: 1,
+    },
+
+    isRewardAwarded: {
+      type: Boolean,
+      default: false,
     },
   },
   {
