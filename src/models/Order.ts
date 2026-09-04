@@ -7,6 +7,7 @@ export interface IOrder extends Document {
   food: string;
   price: number;
   carryingFee: number;
+  platformFee: number;
   totalPrice: number;
   orderTime: Date;
   status: OrderStatus;
@@ -47,6 +48,13 @@ const orderSchema = new mongoose.Schema<IOrder>(
       required: true,
       min: 0,
       default: 0,
+    },
+
+    platformFee: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 4,
     },
 
     totalPrice: {

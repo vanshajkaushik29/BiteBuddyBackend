@@ -3,8 +3,12 @@ import Order from "../models/Order.js";
 import User from "../models/User.js";
 import Trip from "../models/Trip.js";
 import Reward from "../models/Reward.js";
+import Campaign from "../models/Campaign.js";
+import CampaignProgress from "../models/CampaignProgress.js";
+import SystemConfig from "../models/SystemConfig.js";
 import { TripStatus } from "../types/enum.js";
 import { OrderStatus, RewardType } from "../types/enum.js";
+import { parsePaginationParams, createPaginationMeta } from "../utils/pagination.js";
 
 export const createOrder = async (
   req: Request,
@@ -105,10 +109,16 @@ export const createOrder = async (
     // 9. Get carrying fee from trip
     const carryingFee = trip.carryingFee;
 
-    // 10. Calculate total price
-    const totalPrice = price * quantity + carryingFee;
+    // 10. Platform fee (dynamically from SystemConfig or default 4)
+    const platformFeeConfig = await SystemConfig.findOne({ key: "PLATFORM_FEE" });
+    const platformFee = (platformFeeConfig && typeof platformFeeConfig.value === "number")
+      ? platformFeeConfig.value
+      : 4;
 
-    // 11. Create order
+    // 11. Calculate total price
+    const totalPrice = price * quantity + carryingFee + platformFee;
+
+    // 12. Create order
     const order = await Order.create({
       orderedBy: user._id,
       trip: trip._id,
@@ -118,14 +128,15 @@ export const createOrder = async (
       pickupLocation: pickupLocation.trim(),
       pg: user.pg,
       carryingFee,
+      platformFee,
       totalPrice,
     });
 
-    // 12. Increase current order count of trip
+    // 13. Increase current order count of trip
     trip.currentOrders += 1;
     await trip.save();
 
-    // 13. Send response
+    // 14. Send response
     res.status(201).json({
       success: true,
       message: "Order created successfully",
@@ -137,33 +148,52 @@ export const createOrder = async (
 };
 
 export const getmyOrders = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-) => {
-    try {
-        const userId = req.user!.id;
-
-        const orders = await Order.find({
-            orderedBy: userId
-        }).populate("trip");
-
-        if (orders.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "No orders found for this user",
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: "Orders found successfully",
-            data: orders,
-        });
-
-    } catch (error) {
-        next(error);
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    // 1. Guard Clause: Parse & Validate pagination parameters from URL
+    const { params, error } = parsePaginationParams(req.query.page, req.query.limit);
+    if (error) {
+      res.status(400).json({
+        success: false,
+        message: error,
+      });
+      return;
     }
+    const { page, limit, skip } = params!;
+
+    const userId = req.user!.id;
+    const filter = { orderedBy: userId };
+
+    // 2. Concurrent DB Queries: Fetch paginated orders + Total count
+    const [orders, total] = await Promise.all([
+      Order.find(filter)
+        .populate("orderedBy", "name phone profilePic")
+        .populate({
+          path: "trip",
+          populate: {
+            path: "createdBy",
+            select: "name phone profilePic averageRating",
+          },
+        })
+        .sort({ orderTime: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit),
+      Order.countDocuments(filter),
+    ]);
+
+    // 3. Return response using standard envelope
+    res.status(200).json({
+      success: true,
+      message: "Orders fetched successfully",
+      data: orders,
+      pagination: createPaginationMeta(total, page, limit),
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const tripOrders = async (
@@ -190,13 +220,7 @@ export const tripOrders = async (
       trip: trip._id,
     }).populate("orderedBy", "name phone profilePic");
 
-    // 4. If there are no orders
-    if (orders.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No orders found for this trip",
-      });
-    }
+    // 4. Return empty array when no orders — 0 orders is a valid state, not an error
 
     // 5. Return orders
     return res.status(200).json({
@@ -221,7 +245,13 @@ export const getOrderById = async (
     // 2. Find the order
     const order = await Order.findById(orderId)
       .populate("orderedBy", "name phone profilePic")
-      .populate("trip", "destination departureTime expectedReturnTime");
+      .populate({
+        path: "trip",
+        populate: {
+          path: "createdBy",
+          select: "name phone profilePic averageRating",
+        },
+      });
 
     // 3. Check whether order exists
     if (!order) {
@@ -240,7 +270,7 @@ export const getOrderById = async (
       order.orderedBy._id.toString() === userId;
 
     // 6. Check whether logged-in user created the trip
-    const trip = await Trip.findById(order.trip._id);
+    const trip = await Trip.findById((order.trip as any)._id || order.trip);
 
     if (!trip) {
       res.status(404).json({
@@ -374,8 +404,9 @@ export const updateOrder = async (
     }
 
     // 9. Recalculate total price
+    const pFee = order.platformFee !== undefined ? order.platformFee : 4;
     order.totalPrice =
-      order.quantity * (order.price + order.carryingFee);
+      order.quantity * order.price + order.carryingFee + pFee;
 
     // 10. Save updated order
     await order.save();
@@ -383,7 +414,13 @@ export const updateOrder = async (
     // 11. Return updated order
     const updatedOrder = await Order.findById(order._id)
       .populate("orderedBy", "name phone profilePic")
-      .populate("trip", "destination departureTime expectedReturnTime");
+      .populate({
+        path: "trip",
+        populate: {
+          path: "createdBy",
+          select: "name phone profilePic averageRating",
+        },
+      });
 
     res.status(200).json({
       success: true,
@@ -600,7 +637,13 @@ export const deliverOrder = async (
     // 8. Return populated updated order
     const updatedOrder = await Order.findById(order._id)
       .populate("orderedBy", "name phone profilePic")
-      .populate("trip", "destination departureTime expectedReturnTime status");
+      .populate({
+        path: "trip",
+        populate: {
+          path: "createdBy",
+          select: "name phone profilePic averageRating",
+        },
+      });
 
     res.status(200).json({
       success: true,
@@ -708,6 +751,28 @@ export const confirmOrder = async (
           type: RewardType.EARNED_TRIP_COMPLETED,
           description: "Reward points earned for successfully delivering order",
         });
+
+        // 7.1 Auto-increment active Monthly Campaign progress for the trip creator
+        try {
+          const now = new Date();
+          const orderFoodValue = order.price * order.quantity;
+          const activeCampaigns = await Campaign.find({
+            isActive: true,
+            startDate: { $lte: now },
+            endDate: { $gte: now },
+            minOrderValue: { $lte: orderFoodValue },
+          });
+
+          for (const camp of activeCampaigns) {
+            await CampaignProgress.findOneAndUpdate(
+              { user: tripCreator._id, campaign: camp._id },
+              { $inc: { completedDeliveries: 1 } },
+              { upsert: true, new: true }
+            );
+          }
+        } catch (campaignErr) {
+          console.error("Error updating campaign progress:", campaignErr);
+        }
       }
 
       order.isRewardAwarded = true;
@@ -719,7 +784,13 @@ export const confirmOrder = async (
     // 9. Return populated updated order
     const updatedOrder = await Order.findById(order._id)
       .populate("orderedBy", "name phone profilePic")
-      .populate("trip", "destination departureTime expectedReturnTime status");
+      .populate({
+        path: "trip",
+        populate: {
+          path: "createdBy",
+          select: "name phone profilePic averageRating",
+        },
+      });
 
     res.status(200).json({
       success: true,

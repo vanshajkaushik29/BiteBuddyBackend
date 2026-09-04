@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import Trip from "../models/Trip.js";
 import { TripStatus } from "../types/enum.js";
 import { updateTripStatus } from "../utils/updateTripStatus.js";
+import { parsePaginationParams, createPaginationMeta } from "../utils/pagination.js";
 
 export const createTrip = async (
   req: Request,
@@ -141,10 +142,18 @@ export const getTrips = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-
-    // 1. Find logged-in user
+    // 1. Guard Clause: Parse & Validate pagination parameters from URL
+    const { params, error } = parsePaginationParams(req.query.page, req.query.limit);
+    if (error) {
+      res.status(400).json({
+        success: false,
+        message: error,
+      });
+      return;
+    }
+    const { page, limit, skip } = params!;
+    // 2. Find logged-in user to identify their PG
     const user = await User.findById(req.user!.id);
-
     if (!user) {
       res.status(404).json({
         success: false,
@@ -152,52 +161,41 @@ export const getTrips = async (
       });
       return;
     }
-
-    // // 2. Find active trips of the same PG
-    // const activeTrips = await Trip.find({
-    //   pg: user.pg,
-    //   status: TripStatus.ACTIVE,
-    // });
-
-    // //update the status of active trips if they have started
-    // for (const trip of activeTrips) {
-    //   await updateTripStatus(trip);
-    // }
-
-    // // 3. Send response
-    // res.status(200).json({
-    //   success: true,
-    //   message: "Trips fetched successfully",
-    //   data: activeTrips,
-    // 2. Find active trips of the same PG
+    // 3. Lazy status sync: Update active trips whose departure time has passed
     const initialTrips = await Trip.find({
       pg: user.pg,
       status: TripStatus.ACTIVE,
     });
-
-    // Update the status of active trips if they have started
     for (const trip of initialTrips) {
       await updateTripStatus(trip);
     }
-
-    // Fetch the clean list again to exclude any trips that just changed to STARTED
-    const currentActiveTrips = await Trip.find({
-      pg: user.pg,
-      status: TripStatus.ACTIVE,
-    });
-
-    // 3. Send response
+    // 4. Construct query filter
+    const showAll = req.query["all"] === "true";
+    const filter = showAll
+      ? { pg: user.pg }
+      : { pg: user.pg, status: TripStatus.ACTIVE };
+    // 5. Concurrent DB Queries: Fetch paginated data + Total count in parallel
+    const [currentActiveTrips, total] = await Promise.all([
+      Trip.find(filter)
+        .populate("createdBy", "name phone averageRating profilePic")
+        .populate("pg", "name area city landmark")
+        .sort({ departureTime: 1, _id: 1 }) // Deterministic sort
+        .skip(skip)
+        .limit(limit),
+      Trip.countDocuments(filter),
+    ]);
+    // 6. Return response using standard envelope
     res.status(200).json({
       success: true,
       message: "Trips fetched successfully",
-      data: currentActiveTrips, // Send the accurate, fresh data
-
+      data: currentActiveTrips,
+      pagination: createPaginationMeta(total, page, limit),
     });
-
   } catch (error) {
     next(error);
   }
 };
+
 
 export const getMyTrips = async (
   req: Request,
@@ -205,17 +203,42 @@ export const getMyTrips = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const trips = await Trip.find({ createdBy: req.user!.id }).sort({ departureTime: -1 });
+    // 1. Guard Clause: Parse & Validate pagination params
+    const { params, error } = parsePaginationParams(req.query.page, req.query.limit);
+    if (error) {
+      res.status(400).json({
+        success: false,
+        message: error,
+      });
+      return;
+    }
+    const { page, limit, skip } = params!;
 
+    const filter = { createdBy: req.user!.id };
+
+    // 2. Parallel queries for data and total count
+    const [trips, total] = await Promise.all([
+      Trip.find(filter)
+        .populate("createdBy", "name phone averageRating profilePic")
+        .populate("pg", "name area city landmark")
+        .sort({ departureTime: -1, _id: 1 }) // Deterministic sort
+        .skip(skip)
+        .limit(limit),
+      Trip.countDocuments(filter),
+    ]);
+
+    // 3. Send standardized paginated response
     res.status(200).json({
       success: true,
       message: "Your trips fetched successfully",
       data: trips,
+      pagination: createPaginationMeta(total, page, limit),
     });
   } catch (error) {
     next(error);
   }
 };
+
 
 export const getTripById = async (
   req: Request,
@@ -235,7 +258,9 @@ export const getTripById = async (
       return;
     }
 
-    const selectedTrip = await Trip.findById(tripId);
+    const selectedTrip = await Trip.findById(tripId)
+      .populate("createdBy", "name phone averageRating profilePic")
+      .populate("pg", "name area city landmark");
 
     if (!selectedTrip) {
       res.status(404).json({
@@ -245,7 +270,10 @@ export const getTripById = async (
       return;
     }
 
-    if (selectedTrip.pg.toString() !== user.pg.toString()) {
+    const tripPg: any = selectedTrip.pg;
+    const tripPgId = tripPg?._id ? tripPg._id.toString() : tripPg?.toString();
+
+    if (tripPgId !== user.pg.toString()) {
       res.status(403).json({
         success: false,
         message: "You are not allowed to access this trip.",
@@ -258,7 +286,6 @@ export const getTripById = async (
       message: "Trip fetched successfully",
       data: selectedTrip,
     });
-
   } catch (error) {
     next(error);
   }
@@ -498,7 +525,6 @@ export const deleteTrip = async (
       success: true,
       message: "Trip deleted successfully",
     });
-
   } catch (error) {
     next(error);
   }

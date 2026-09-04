@@ -7,6 +7,8 @@ import { errorHandler } from "./middlewares/errorHandler.js";
 import cookieParser from "cookie-parser";
 import orderRoutes from "./routes/orderRoutes.js";
 import rewardRoutes from "./routes/rewardRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import campaignRoutes from "./routes/campaignRoutes.js";
 const app = express();
 
 app.use(
@@ -29,6 +31,8 @@ app.use("/api/trips",tripRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/rewards", rewardRoutes);
 app.use("/api/pgs", pgRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/campaigns", campaignRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
