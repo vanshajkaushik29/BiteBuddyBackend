@@ -1,7 +1,6 @@
 import mongoose, { Document } from "mongoose";
-import { VerificationStatus } from "../types/enum.js";
 
-export interface IPg extends Document {
+export interface IPG extends Document {
   name: string;
   normalizedName: string;
   area: string;
@@ -10,59 +9,53 @@ export interface IPg extends Document {
   normalizedCity: string;
   state: string;
   landmark?: string;
-  verificationStatus: VerificationStatus;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-const PgSchema = new mongoose.Schema<IPg>(
+const pgSchema = new mongoose.Schema<IPG>(
   {
     name: {
       type: String,
       required: true,
       trim: true,
     },
-
     normalizedName: {
       type: String,
       required: true,
+      trim: true,
+      lowercase: true,
     },
-
     area: {
       type: String,
       required: true,
       trim: true,
     },
-
     normalizedArea: {
       type: String,
       required: true,
+      trim: true,
+      lowercase: true,
     },
-
     city: {
       type: String,
       required: true,
       trim: true,
     },
-
     normalizedCity: {
       type: String,
       required: true,
+      trim: true,
+      lowercase: true,
     },
-
     state: {
       type: String,
       required: true,
       trim: true,
     },
-
     landmark: {
       type: String,
       trim: true,
-    },
-
-    verificationStatus: {
-      type: String,
-      enum: Object.values(VerificationStatus),
-      default: VerificationStatus.Pending,
     },
   },
   {
@@ -70,6 +63,9 @@ const PgSchema = new mongoose.Schema<IPg>(
   }
 );
 
-const PG = mongoose.model<IPg>("PG", PgSchema);
+pgSchema.index({ normalizedName: 1, normalizedArea: 1, normalizedCity: 1 });
+pgSchema.index({ normalizedArea: 1, normalizedCity: 1, state: 1 });
+
+const PG = mongoose.model<IPG>("PG", pgSchema);
 
 export default PG;

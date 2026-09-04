@@ -1,45 +1,67 @@
 import type { Request, Response, NextFunction } from "express";
 import User from "../models/User.js";
 import PG from "../models/Pg.js";
+import { parsePaginationParams, createPaginationMeta } from "../utils/pagination.js";
 
 export const getPGs = async (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   try {
-    // 1. Get logged-in user
+    // 1. Guard Clause: Parse & Validate pagination parameters from URL
+    const { params, error } = parsePaginationParams(req.query.page, req.query.limit, 20);
+    if (error) {
+      res.status(400).json({
+        success: false,
+        message: error,
+      });
+      return;
+    }
+    const { page, limit, skip } = params!;
+
+    // 2. Get logged-in user
     const user = await User.findById(req.user!.id).populate("pg");
 
     if (!user) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: "User not found",
       });
+      return;
     }
 
-    // 2. Check whether user has a PG
+    // 3. Check whether user has a PG
     if (!user.pg) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: "User is not associated with any PG",
       });
+      return;
     }
 
-    // 3. Get user's PG
+    // 4. Get user's PG
     const userPG = user.pg as any;
-
-    // 4. Find PGs in the same area, city and state
-    const pgs = await PG.find({
+    const filter = {
       normalizedArea: userPG.normalizedArea,
       normalizedCity: userPG.normalizedCity,
       state: userPG.state,
-    });
+    };
 
-    return res.status(200).json({
+    // 5. Concurrent DB Queries: Fetch paginated PGs + Total count
+    const [pgs, total] = await Promise.all([
+      PG.find(filter)
+        .sort({ name: 1, _id: 1 })
+        .skip(skip)
+        .limit(limit),
+      PG.countDocuments(filter),
+    ]);
+
+    res.status(200).json({
       success: true,
       message: "PGs fetched successfully",
       data: pgs,
+      pagination: createPaginationMeta(total, page, limit),
     });
   } catch (error) {
     next(error);

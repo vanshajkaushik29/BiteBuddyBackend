@@ -6,11 +6,12 @@ export interface IUser extends Document{
     phone:string;
     password:string;
     pg:mongoose.Types.ObjectId;
-    profilePic?:string,
-    averageRating:number,
-    ratingCount:number,
-    rewardPoints:number
-
+    profilePic?:string;
+    averageRating:number;
+    ratingCount:number;
+    rewardPoints:number;
+    walletBalance:number;
+    role:"user" | "admin";
 }
 
 
@@ -59,6 +60,15 @@ const userSchema = new mongoose.Schema<IUser>({
     rewardPoints:{
         type:Number,
         default:0
+    },
+    walletBalance:{
+        type:Number,
+        default:0
+    },
+    role:{
+        type:String,
+        enum:["user", "admin"],
+        default:"user"
     }
 },{timestamps:true}
 )
