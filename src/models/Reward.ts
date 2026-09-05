@@ -40,6 +40,10 @@ const rewardSchema = new mongoose.Schema<IReward>(
   }
 );
 
+// User ki reward history newest first load karne ke liye
+rewardSchema.index({ user: 1, createdAt: -1 });
+
+
 const Reward = mongoose.model<IReward>("Reward", rewardSchema);
 
 export default Reward;

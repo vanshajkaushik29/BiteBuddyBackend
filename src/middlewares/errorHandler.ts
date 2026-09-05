@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { AppError } from "../utils/error.js";
 
 export const errorHandler = (
   error: unknown,
@@ -6,14 +7,23 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ): void => {
-  
-  const statusCode = 500;
+
+  // 1. Agar hamara banaya hua Custom Error hai:
+  if (error instanceof AppError) {
+    res.status(error.statusCode).json({
+      success: false,
+      message: error.message,
+    });
+    return;
+  }
+
+
   const message =
-  error instanceof Error
-    ? error.message
-    : "Internal server error";
-    res.status(statusCode).json({
-  success: false,
-  message,
-});
+    error instanceof Error
+      ? error.message
+      : "Internal server error";
+  res.status(500).json({
+    success: false,
+    message,
+  });
 };

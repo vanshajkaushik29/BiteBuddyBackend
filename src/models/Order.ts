@@ -102,6 +102,12 @@ const orderSchema = new mongoose.Schema<IOrder>(
   }
 );
 
+orderSchema.index({ orderedBy: 1, createdAt: -1 });
+// 2. Driver ke trip ke specific orders dekhne ke liye (Equality on trip + status)
+orderSchema.index({ trip: 1, status: 1 });
+// 3. PG ke orders analytics ke liye
+orderSchema.index({ pg: 1, createdAt: -1 });
+
 const Order = mongoose.model<IOrder>("Order", orderSchema);
 
 export default Order;
