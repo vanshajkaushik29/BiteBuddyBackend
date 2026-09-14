@@ -88,6 +88,9 @@ tripSchema.index({
     status: 1
 });
 
+tripSchema.index({ status: 1, departureTime: 1 });
+
+
 const Trip = mongoose.model<ITrip>("Trip", tripSchema);
 
 export default Trip;

@@ -11,9 +11,22 @@ import adminRoutes from "./routes/adminRoutes.js";
 import campaignRoutes from "./routes/campaignRoutes.js";
 const app = express();
 
+app.set("trust proxy", 1);
+
+const allowedOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(",").map((url) => url.trim())
+  : ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"];
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL ? process.env.CLIENT_URL.split(",") : ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, postman, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   })
 );
