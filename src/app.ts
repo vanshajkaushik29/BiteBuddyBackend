@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request, type Response } from "express";
 import cors from "cors";
 import authRoutes from "./routes/authRoutes.js"
 import tripRoutes from "./routes/tripRoutes.js"
@@ -13,13 +13,13 @@ const app = express();
 
 app.set("trust proxy", 1);
 
-const allowedOrigins = process.env.CLIENT_URL
-  ? process.env.CLIENT_URL.split(",").map((url) => url.trim())
+const allowedOrigins: string[] = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(",").map((url: string) => url.trim())
   : ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"];
 
 app.use(
   cors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Allow requests with no origin (e.g. mobile apps, postman, server-to-server)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
@@ -35,7 +35,7 @@ app.use(express.json());
 
 app.use(cookieParser());
 
-app.get("/", (req, res) => {
+app.get("/", (req: Request, res: Response) => {
   res.send("BiteBuddy backend is running");
 });
 
@@ -47,7 +47,7 @@ app.use("/api/pgs", pgRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/campaigns", campaignRoutes);
 
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
     message: "Route not found",
